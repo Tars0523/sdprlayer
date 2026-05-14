@@ -66,6 +66,7 @@ class SDPPoseEstimator(nn.Module):
         keypoints_3D_trg,
         weights,
         inv_cov_weights=None,
+        Q_pose=None,
         verbose=False,
         mosek_params=None,
         return_loss=False,
@@ -89,7 +90,11 @@ class SDPPoseEstimator(nn.Module):
         # Construct objective function
         with record_function("SDPR: Build Cost Matrix"):
             Qs, scales, offsets = self.get_obj_matrix_vec(
-                keypoints_3D_src, keypoints_3D_trg, weights, inv_cov_weights
+                keypoints_3D_src,
+                keypoints_3D_trg,
+                weights,
+                inv_cov_weights,
+                Q_pose=Q_pose,
             )
 
         # Run layer
@@ -123,6 +128,7 @@ class SDPPoseEstimator(nn.Module):
         keypoints_3D_trg,
         weights,
         inv_cov_weights=None,
+        Q_pose=None,
         scale_offset=True,
     ):
         """Compute the QCQP (Quadratically Constrained Quadratic Program) objective matrix
@@ -177,6 +183,10 @@ class SDPPoseEstimator(nn.Module):
         # Scale by weights
         weights = weights.squeeze(1)
         Q = torch.einsum("bnij,bn->bij", Q_n, weights)
+        if Q_pose is not None:
+            if Q_pose.dim() == 2:
+                Q_pose = Q_pose.unsqueeze(0)
+            Q = Q + Q_pose.to(device=device, dtype=Q.dtype)
         # NOTE: operations below are to improve optimization conditioning for solver
         # remove constant offset
         if scale_offset:
@@ -398,3 +408,4 @@ def bkron(a, b):
     return torch.einsum("...ij,...kl->...ikjl", a, b).reshape(
         *a.shape[:-2], a.shape[-2] * b.shape[-2], a.shape[-1] * b.shape[-1]
     )
+
